@@ -1,11 +1,11 @@
 <!--          FPGA arcade hardware by Jotego
 
-              This core is available for hardware compatible with MiST and MiSTer
+              This core is available for hardware compatible with MiSTer
               Other FPGA systems may be supported by the time you read this.
               This work is not mantained by the MiSTer project. Please contact the
               core author for issues and updates.
 
-              (c) Jose Tejada, 2026. Please support this research
+              This core is made possible with JTFRAME. Please support this research
               Patreon: https://patreon.com/jotego
 
               The author does not endorse or participate in illegal distribution
@@ -16,12 +16,10 @@
               This file license is GNU GPLv2.
               You can read the whole license file in
               https://opensource.org/licenses/gpl-2.0.php
-
-     ROM assembly adopted verbatim from the jtcores release MRA; only <rbf>
-     is changed to launch this MiSTer-devel port (Arcade-Deco16). -->
+ -->
 
 <misterromdescription>
-    <about author="jotego" webpage="https://patreon.com/jotego" twitter="@topapate" source="https://jotego/jtcores"/>
+    <about author="AndreaBogazzi"/>
     <rotation>horizontal</rotation>
     <name>Caveman Ninja (World ver 4)</name>
     <setname>cninja</setname>
@@ -29,7 +27,7 @@
     <year>1991</year>
     <manufacturer>Data East Corporation</manufacturer>
     <players>2</players>
-    <rbf>Arcade-Deco16</rbf>
+    <rbf>Deco16</rbf>
     <joystick>8</joystick>
     <region>World</region>
     <rom index="0" zip="cninja.zip" md5="None">
