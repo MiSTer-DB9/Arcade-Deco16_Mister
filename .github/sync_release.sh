@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+# Copyright (c) 2020 José Manuel Barroso Galindo <theypsilon@gmail.com>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=retry.sh
+source "${SCRIPT_DIR}/retry.sh"
+# shellcheck source=rerere_train.sh
+source "${SCRIPT_DIR}/rerere_train.sh"  # configure_rerere
+
+UPSTREAM_REPO="https://github.com/MiSTer-devel/Arcade-Deco16_Mister.git"
+CORE_NAME=(Arcade-Deco16)
+# Upstream release-file grep pattern (per element of CORE_NAME). Same length as
+# CORE_NAME; for base sections this matches RELEASE_CORE_NAME, for variant-only
+# sections (e.g. NeoGeo_24MHz_cpu_only) it carries the base name that upstream's
+# releases/ actually contains.
+UPSTREAM_CORE_NAME=(Arcade-Deco16)
+MAIN_BRANCH="main"
+UPSTREAM_BRANCH="main"
+COMPILATION_INPUT=(Arcade-Deco16.qpf)
+COMPILATION_OUTPUT=(output_files/Arcade-Deco16.rbf)
+
+# fork-only cores have no upstream; sync_release is a no-op
+if [[ -z "${UPSTREAM_REPO}" ]]; then
+    echo "No UPSTREAM_REPO configured — fork-only core, skipping sync."
+    exit 0
+fi
+
+# Record a FAILED stable merge of an upstream release commit so the dispatcher
+# (sync_dispatch.sh::_check_stable) cools down and stops re-notifying every poll
+# while the same upstream release still can't be merged. Mirrors the unstable
+# channel's record_unstable_failure. There is no per-build release on a failed
+# sync (the run aborts before `gh release create`), so the marker is stamped
+# into the newest existing `stable/${MAIN_BRANCH}/` release body — the same body
+# _check_stable reads STORED_HEAD/STORED_RELEASE_SHA from. The next SUCCESSFUL
+# build creates a newer release without the field, so the cooldown self-clears.
+# Best-effort: never let a cooldown-write failure mask the notify/abort.
+record_stable_failure() {
+    local failed_release_sha="$1" tag body new_body
+    tag=$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,createdAt \
+            --jq "[.[] | select(.tagName | startswith(\"stable/${MAIN_BRANCH}/\"))] | sort_by(.createdAt) | reverse | .[0].tagName // empty" 2>/dev/null || echo "")
+    if [[ -z "${tag}" ]]; then
+        echo >&2 "record_stable_failure: no stable/${MAIN_BRANCH}/ release yet — skipping cooldown write"
+        return 0
+    fi
+    body=$(gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" --json body --jq '.body' 2>/dev/null || echo "")
+    new_body=$(FAILED_RELEASE_SHA="${failed_release_sha}" EXISTING_BODY="${body}" python3 - <<'PY'
+import os, re, sys
+body = os.environ.get("EXISTING_BODY", "")
+failed = os.environ["FAILED_RELEASE_SHA"]
+lines = [l for l in body.splitlines() if not re.match(r"^last_failed_release_sha:", l)]
+while lines and lines[-1].strip() == "":
+    lines.pop()
+lines.append(f"last_failed_release_sha:  {failed}")
+sys.stdout.write("\n".join(lines).rstrip() + "\n")
+PY
+)
+    gh release edit "${tag}" --repo "${GITHUB_REPOSITORY}" --notes "${new_body}" || true
+}
+
+echo "Fetching upstream:"
+git remote remove upstream 2> /dev/null || true
+git remote add upstream "${UPSTREAM_REPO}"
+retry -- git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules upstream
+UPSTREAM_HEAD_SHA=$(git rev-parse "remotes/upstream/${UPSTREAM_BRANCH}")
+git checkout -qf "remotes/upstream/${UPSTREAM_BRANCH}"
+
+# grep miss on releases/ → pipefail + set -e would abort the sync; tolerate
+# an empty match so first-ever syncs (no prior build artifact) proceed.
+NEW_RELEASE_FILE=$(cd releases/ ; git ls-files -z | xargs -0 -n1 -I{} -- git log -1 --format="%ai {}" {} | grep "${UPSTREAM_CORE_NAME[0]}" | sort | tail -n1 | awk '{ print substr($0, index($0,$4)) }' || true)
+COMMIT_TO_MERGE=$(git log -n 1 --pretty=format:%H -- "releases/${NEW_RELEASE_FILE}")
+
+UPSTREAM_CORE_FILES=()
+for i in "${!CORE_NAME[@]}"; do
+    UPSTREAM_CORE_FILES[i]=$(cd releases/ ; git ls-files -z | xargs -0 -n1 -I{} -- git log -1 --format="%ai {}" {} | grep "${UPSTREAM_CORE_NAME[i]}" | sort | tail -n1 | awk '{ print substr($0, index($0,$4)) }' || true)
+done
+
+export GIT_MERGE_AUTOEDIT=no
+git config --global user.email "theypsilon@gmail.com"
+git config --global user.name "The CI/CD Bot"
+# rerere/merge policy (enabled + 2-way conflictstyle + autoupdate) — see
+# rerere_train.sh::configure_rerere for the per-knob rationale.
+configure_rerere
+
+echo
+echo "Syncing with upstream:"
+if [[ -f .git/shallow ]]; then
+    retry -- git fetch origin --unshallow
+fi
+git checkout -qf "${MAIN_BRANCH}"
+
+ORIGIN_CORE_FILES=()
+NEED_REBUILD=false
+for i in "${!CORE_NAME[@]}"; do
+    ORIGIN_CORE_FILES[i]=$(cd releases/ ; git ls-files -z | xargs -0 -n1 -I{} -- git log -1 --format="%ai {}" {} | grep "${CORE_NAME[i]}" | sort | tail -n1 | awk '{ print substr($0, index($0,$4)) }' || true)
+    if [[ -n "${UPSTREAM_CORE_FILES[i]}" && "${UPSTREAM_CORE_FILES[i]}" != "${ORIGIN_CORE_FILES[i]}" ]]; then
+        NEED_REBUILD=true
+    fi
+done
+
+echo
+echo "START rerere-train.sh"
+
+# Remember original branch
+ORIGINAL_BRANCH=$(git symbolic-ref -q HEAD) ||
+ORIGINAL_HEAD=$(git rev-parse --verify HEAD) || {
+	echo >&2 "rerere-train.sh: Not on any branch and no commit yet?"
+	exit 1
+}
+
+mkdir -p ".git/rr-cache" || true
+
+# Also replay the per-variant unstable branch's merge resolutions. A conflict
+# resolved on the unstable canary lives on origin/unstable/${MAIN_BRANCH}, which
+# is never merged back into ${MAIN_BRANCH}, so the HEAD-only walk above cannot
+# see it — a one-time structural conflict resolved on unstable would otherwise
+# recur unresolved on stable when the same upstream commit syncs here. Seed
+# rerere from the canary's resolution too. `^HEAD` bounds the extra walk to the
+# unstable-only commits; a missing/unfetchable unstable branch is a no-op.
+UNSTABLE_TRAIN_REF=""
+if git fetch --no-tags origin "unstable/${MAIN_BRANCH}:refs/remotes/origin/unstable/${MAIN_BRANCH}" 2>/dev/null &&
+   git rev-parse --verify -q "refs/remotes/origin/unstable/${MAIN_BRANCH}" >/dev/null; then
+	UNSTABLE_TRAIN_REF="refs/remotes/origin/unstable/${MAIN_BRANCH} ^HEAD"
+fi
+{
+	git rev-list --parents "HEAD"
+	if [ -n "${UNSTABLE_TRAIN_REF}" ]; then git rev-list --parents ${UNSTABLE_TRAIN_REF}; fi
+} |
+while read commit parent1 other_parents
+do
+	if test -z "${other_parents}"
+	then
+		# Skip non-merges
+		continue
+	fi
+	git checkout -q "${parent1}^0"
+	# MUST mirror the live merge below (line ~178 uses -Xignore-all-space).
+	# rerere keys on the rendered conflict text; replaying with a plain merge
+	# segments hunks differently than the -Xignore-all-space live merge, so the
+	# recorded resolution never matches and rerere misses. This is exactly why
+	# the upstream 2026-06-03 "Update sys." conflict failed to auto-resolve on
+	# stable despite the canary resolution existing on origin/unstable/<branch>
+	# (sys.qip matched by luck; NES.sv / sys/hps_io.sv, reindented by upstream,
+	# did not). Keep the training strategy options in lockstep with the live one.
+	if git merge -Xignore-all-space ${other_parents} >/dev/null 2>&1
+	then
+		# Cleanly merges
+		continue
+	fi
+	if test -s ".git/MERGE_RR"
+	then
+		git show -s --pretty=format:"Learning from %h %s" "${commit}"
+		git rerere
+		git checkout -q ${commit} -- .
+		git rerere
+	fi
+	git reset -q --hard
+done
+
+if test -z "${ORIGINAL_BRANCH}"
+then
+	git checkout "${ORIGINAL_HEAD}"
+else
+	git checkout "${ORIGINAL_BRANCH#refs/heads/}"
+fi
+
+echo "END rerere-train.sh"
+echo
+
+# Snapshot the PRE-merge port-wiring failures so the post-merge gate below can
+# fail only on regressions the upstream merge itself introduced (best-effort —
+# a bad baseline must never block the sync).
+./.github/merge_validate.sh baseline . || true
+
+# `git merge` exits non-zero after ANY conflict — even when rerere auto-resolved
+# and staged every one (autoupdate). A non-zero exit is safe to proceed past ONLY
+# when the merge actually started and rerere resolved everything: MERGE_HEAD is
+# set AND no unmerged paths remain (the `git commit` further below then lands the
+# merge). Otherwise — real leftover conflicts (unmerged paths) OR a non-conflict
+# failure that never started the merge so MERGE_HEAD is absent (unrelated
+# histories, dirty/locked tree, empty/invalid COMMIT_TO_MERGE) — alert + abort,
+# exactly as the old `|| notify_error` did. Checking unmerged paths alone would
+# silently swallow those non-conflict failures and let the run commit a tree that
+# never integrated upstream.
+if ! git merge -Xignore-all-space --no-commit "${COMMIT_TO_MERGE}"; then
+    if ! git rev-parse -q --verify MERGE_HEAD >/dev/null || git ls-files --unmerged | grep -q .; then
+        record_stable_failure "${COMMIT_TO_MERGE}" || true
+        ./.github/notify_error.sh "UPSTREAM MERGE CONFLICT" "$@"
+    fi
+    echo "rerere auto-resolved all conflicts in the upstream merge; proceeding."
+fi
+
+# No-op guard: an "Already up to date." merge (the upstream release commit is
+# already an ancestor of ${MAIN_BRANCH} — e.g. a forced re-dispatch of an
+# already-synced core) leaves no MERGE_HEAD and nothing staged. The unconditional
+# `git commit` below would then die with "nothing to commit, working tree clean"
+# and fail the whole run under `set -e`. Detect that and exit cleanly instead.
+# Safe here because the fork branch always carries its own DB9 commits ahead of
+# upstream, so a real sync is always a 3-way merge (MERGE_HEAD set) — a pure
+# fast-forward that moves HEAD without staging cannot occur.
+if ! git rev-parse -q --verify MERGE_HEAD >/dev/null && git diff --cached --quiet; then
+    echo "Upstream ${COMMIT_TO_MERGE} already merged into ${MAIN_BRANCH}; nothing to merge — skipping."
+    exit 0
+fi
+
+# fork-only sys/ helper integrity (fork-only). The merge is --no-commit, so HEAD
+# is still the pre-merge tip; comparing it to the working tree catches a rerere
+# mis-replay that reverted joydb.sv / joydb_remap.sv / the key-gate sources
+# (the 00f49da class — invisible to the regression-delta gate below because the
+# revert is internally consistent). Abort before push, same path as the tripwire.
+assert_fork_helpers_unchanged HEAD || { record_stable_failure "${COMMIT_TO_MERGE}" || true; ./.github/notify_error.sh "UPSTREAM MERGE REVERTED FORK SYS HELPER" "$@"; }
+
+# status bit collision tripwire (fork-only)
+./.github/check_status_collision.sh || { record_stable_failure "${COMMIT_TO_MERGE}" || true; ./.github/notify_error.sh "UPSTREAM STATUS BIT COLLISION" "$@"; }
+
+# post-merge port-validation gate (fork-only; regression-only). Aborts before
+# the merge is committed/pushed to ${MAIN_BRANCH}, exactly like the collision
+# tripwire above.
+./.github/merge_validate.sh check . || { record_stable_failure "${COMMIT_TO_MERGE}" || true; ./.github/notify_error.sh "UPSTREAM MERGE BROKE PORT VALIDATION" "$@"; }
+
+git submodule update --init --recursive
+
+# merge + push, then POST workflow_dispatch to release.yml.
+# NEED_REBUILD only picks the commit subject — release.sh's source-hash decides
+# the real rebuild.
+if [[ "${NEED_REBUILD}" == "true" ]]; then
+    git commit -m "BOT: Merging upstream, release will publish ${CORE_NAME[*]}."
+else
+    git commit -m "BOT: Merging upstream, no core released."
+fi
+retry -- git push origin "${MAIN_BRANCH}"
+
+# Trigger release.yml. The push above uses the default GITHUB_TOKEN, and GH
+# Actions deliberately doesn't trigger workflows from GITHUB_TOKEN pushes (loop
+# guard), so release.yml's `on: push` is structurally unreachable from here.
+# But workflow_dispatch via API authenticated with GITHUB_TOKEN *does* fire
+# downstream runs (same-repo dispatch; cross-repo PAT not needed).
+WORKFLOW_DISPATCH_URL="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/dispatches"
+echo
+echo "Triggering release.yml: POST ${WORKFLOW_DISPATCH_URL} ref=${MAIN_BRANCH}"
+curl --fail-with-body --retry 3 --retry-delay 10 --retry-all-errors \
+    --retry-connrefused --retry-max-time 120 --max-time 60 -X POST \
+    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    -H "Content-Type: application/json" \
+    --data "{\"ref\":\"${MAIN_BRANCH}\",\"inputs\":{\"upstream_release_sha\":\"${COMMIT_TO_MERGE}\",\"upstream_head_at_sync\":\"${UPSTREAM_HEAD_SHA}\"}}" \
+    "${WORKFLOW_DISPATCH_URL}"
+echo
+echo "release.yml dispatch sent successfully."
