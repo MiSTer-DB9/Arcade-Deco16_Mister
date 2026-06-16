@@ -29,6 +29,7 @@ module jtcninja_snd(
     input             cen_opm,    // YM2151 ~3.58MHz
     input             cen_oki1,   // ~1MHz
     input             cen_oki2,   // ~2MHz
+    input             dseal,      // game_id==2: darkseal OKI2 is 256kB, NOT banked
     // From main CPU via DECO 104
     input      [ 7:0] latch,
     input             snd_irq,    // 1-clk pulse on soundlatch write
@@ -251,9 +252,10 @@ always @(posedge clk) begin
 end
 `endif
 
-// ---- OKI #2 (512kB, banked by YM2151 CT1) ----
+// ---- OKI #2: cninja 512kB banked by YM2151 CT1; darkseal 256kB, NOT banked
+// (its YM2151 has no CT handler) so the CT1 bit must not reach the address. ----
 wire [17:0] oki2_a;
-assign oki2_addr = { ym_ct1, oki2_a };   // set_rom_bank(data&1)
+assign oki2_addr = { ~dseal & ym_ct1, oki2_a };   // cninja set_rom_bank(data&1)
 jt6295 #(.INTERPOL(0)) u_oki2(
     .rst     ( rst      ),
     .clk     ( clk      ),

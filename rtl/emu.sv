@@ -54,8 +54,8 @@ localparam CONF_STR = {
 	"-;",
 	"T[0],Reset;",
 	"R[0],Reset and close OSD;",
-	"J1,Attack,Jump,Start,Coin,Pause;",
-	"jn,A,B,Start,Select,R;",
+	"J1,Attack,Jump,Special,Start,Coin,Pause;",
+	"jn,A,B,X,Start,Select,R;",
 	"V,v",`BUILD_DATE
 };
 
@@ -165,20 +165,24 @@ assign ioctl_wait = prog_we;
 
 //////////////////////////////   INPUTS   ////////////////////////////////////
 // jtframe cabinet inputs are ACTIVE-LOW (idle=1). MiSTer joystick bits are
-// active-high; invert. jtframe joystick: [5:4]={B2,B1}, [3:0] dir nibble with
+// active-high; invert. The jtframe MRA <buttons> uses a 3-button family layout
+// (so Caveman Ninja & Crude Buster share bit positions): bit4=Attack bit5=Jump
+// bit6=Special(B3) bit7=Start bit8=Coin bit9=Pause/credits. Caveman Ninja
+// reserves bit6 with a "-" placeholder, so START/COIN sit at bits 7/8 for BOTH.
+// jtframe joystick: [6:4]={B3,B2,B1}, [3:0] dir nibble with
 // JTFRAME_JOY_RLDU => {R,L,D,U} = {in[0],in[1],in[2],in[3]}.
-function [5:0] jtjoy(input [31:0] m);
-	jtjoy = ~{ m[5], m[4], m[0], m[1], m[2], m[3] };
+function [6:0] jtjoy(input [31:0] m);
+	jtjoy = ~{ m[6], m[5], m[4], m[0], m[1], m[2], m[3] };
 endfunction
 
-wire [5:0] joystick1 = jtjoy(joystick_0);
-wire [5:0] joystick2 = jtjoy(joystick_1);
-wire [5:0] joystick3 = jtjoy(joystick_2);
-wire [5:0] joystick4 = jtjoy(joystick_3);
+wire [6:0] joystick1 = jtjoy(joystick_0);
+wire [6:0] joystick2 = jtjoy(joystick_1);
+wire [6:0] joystick3 = jtjoy(joystick_2);
+wire [6:0] joystick4 = jtjoy(joystick_3);
 
-wire [3:0] cab_1p = ~{ joystick_3[6], joystick_2[6], joystick_1[6], joystick_0[6] };
-wire [3:0] coin   = ~{ joystick_3[7], joystick_2[7], joystick_1[7], joystick_0[7] };
-wire       game_pause = joystick_0[8] | joystick_1[8];
+wire [3:0] cab_1p = ~{ joystick_3[7], joystick_2[7], joystick_1[7], joystick_0[7] };
+wire [3:0] coin   = ~{ joystick_3[8], joystick_2[8], joystick_1[8], joystick_0[8] };
+wire       game_pause = joystick_0[9] | joystick_1[9];
 
 //////////////////////////////   GAME CORE   /////////////////////////////////
 wire [7:0] red, green, blue;

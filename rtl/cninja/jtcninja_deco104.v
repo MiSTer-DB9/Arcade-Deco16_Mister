@@ -1,4 +1,6 @@
-/*  DECO 104 protection / I/O mux for Data East cninja.cpp (Joe & Mac).
+/*  See jtcninja_game.v header.
+
+    DECO 104 protection / I/O mux for Data East cninja.cpp (Joe & Mac).
 
     Ported from MAME deco146.cpp / deco104.cpp (deco_146_base_device +
     deco104 specialisation). For the cninja set the CPU-side address bitswap
@@ -76,8 +78,10 @@ wire [ 9:0] tidx    = ra_xor[10:1];          // table index (>>1)
 // jtframe joystick/coin/service are ALREADY active low (idle=1), like the
 // DATA EAST ports, so they pass through directly - do NOT invert. Only the
 // vblank bit is active high. START1/START2 come from cab_1p[0]/[1].
-wire [15:0] port_a = { cab_1p[1], 1'b1, joystick2[`JTFRAME_BUTTONS+3:0],
-                       cab_1p[0], 1'b1, joystick1[`JTFRAME_BUTTONS+3:0] };
+// cninja has 2 buttons; slice [5:0] explicitly (the family JTFRAME_BUTTONS is 3
+// for cbuster, so the macro would overflow this 8-bit-per-player word).
+wire [15:0] port_a = { cab_1p[1], 1'b1, joystick2[5:0],
+                       cab_1p[0], 1'b1, joystick1[5:0] };
 wire [15:0] port_b = { 12'hfff, ~LVBL, service, coin[1:0] };
 wire [15:0] port_c = dipsw;
 
