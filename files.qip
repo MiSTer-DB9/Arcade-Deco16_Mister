@@ -120,6 +120,7 @@ set_global_assignment -name VERILOG_FILE       rtl/jtframe/jtframe_bcd_cnt.v
 set_global_assignment -name VERILOG_FILE       rtl/jtframe/jtframe_board_sdram.v
 set_global_assignment -name VERILOG_FILE       rtl/jtframe/jtframe_rsthold.v
 set_global_assignment -name VERILOG_FILE       rtl/jtframe/jtframe_sh.v
+set_global_assignment -name VERILOG_FILE       rtl/jtframe/ram/jtframe_bram_dma.v
 set_global_assignment -name VERILOG_FILE       rtl/jtframe/ram/jtframe_dual_ram.v
 set_global_assignment -name VERILOG_FILE       rtl/jtframe/ram/jtframe_dual_ram16.v
 set_global_assignment -name VERILOG_FILE       rtl/jtframe/ram/jtframe_obj_buffer.v

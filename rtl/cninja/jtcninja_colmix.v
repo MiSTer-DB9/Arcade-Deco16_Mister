@@ -125,10 +125,10 @@ wire [10:0] sb_pal_idx =
 wire [10:0] obj_vp = 11'h100 + { 2'b0, obj_pxl[8:0] };
 // Layer order front->back (vaportra.cpp screen_update): fg(tg0 pf1, 8x8, FRONT) >
 // sprites > mg(tg0 pf2) > pf1b(tg1 pf1) > bg(tg1 pf2, opaque backdrop).
-// fg now has a tiles1 read port (scr1b) but its 8x8 charlayout decode of the
-// 16x16-tilelayout-packed tiles1 is still wrong (renders opaque garbage over the
-// whole screen) -> kept out of the mux until the 8x8 tiles1 decode is fixed.
+// fg reads its 8x8 chars from the char ROM region (char-major copy sliced from
+// tiles1 in the MRA) -> front-most layer, col bank 0x00 -> pal base 0x000.
 wire [10:0] vp_pal_idx =
+    fg_opaque   ? { 3'd0, fg_pxl   } :   // tilegen0 pf1 (fg, 8x8) base 0x000 FRONT
     obj_opaque  ? obj_vp             :   // sprites base 0x100
     mg_opaque   ? { 3'd2, mg_pxl   } :   // tilegen0 pf2 (mg) base 0x200
     pf1b_opaque ? { 3'd3, pf1b_pxl } :   // tilegen1 pf1 (pf1b) base 0x300

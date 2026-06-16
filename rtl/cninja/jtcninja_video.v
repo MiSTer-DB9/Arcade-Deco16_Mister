@@ -233,13 +233,32 @@ jtframe_dual_ram16 #(.AW(12), .ENDIAN(1), .SIMFILE(SF_T1P2)) u_t1p2(
     .we0({2{t1p2 & wr}} & wmask), .q0(t1p2_q),
     .clk1(clk), .addr1(t1p2_vaddr), .data1(16'd0), .we1(2'b0), .q1(t1p2_vq));
 
-// ---- sprite RAM : 0x1a4000-0x1a47ff (0x400 words). Port1 = obj-engine read.
-// TODO: double-buffer on obj_copy (DMA flag); scene replay reads it directly.
+// ---- sprite RAM : 0x1a4000-0x1a47ff (0x400 words). CPU r/w on port0.
+// Double-buffered like the real buffered_spriteram16: a write to the sprite DMA
+// flag (obj_copy, 0x1b4000) snapshots the CPU spriteram into u_objbuf, which the
+// obj engine scans. Without it the engine reads the list mid-CPU-update and
+// sprites tear / drop rows in motion (scene replay reads a static dump, so the
+// bug only shows in live play). Copy via jtframe_bram_dma (karnov pattern):
+// objdma_addr sweeps 0..0x3ff reading u_obj port1, writing u_objbuf port0.
 wire [ 9:0] oram_vaddr;
 wire [15:0] oram_vq;
-jtframe_dual_ram16 #(.AW(10), .ENDIAN(1), .SIMFILE(SF_ORAM)) u_obj(
+wire [ 9:0] objdma_addr;
+wire        objdma_we;
+wire [15:0] oram_dmaq;       // word read from CPU spriteram during the copy
+jtframe_dual_ram16 #(.AW(10), .ENDIAN(1)) u_obj(
     .clk0(clk), .addr0(cpu_addr[10:1]), .data0(cpu_dout),
     .we0({2{objram_cs & wr}} & wmask), .q0(obj_dout),
+    .clk1(clk), .addr1(objdma_addr), .data1(16'd0), .we1(2'b0), .q1(oram_dmaq));
+
+jtframe_bram_dma #(.AW(10)) u_objdma(
+    .rst(rst), .clk(clk), .cen(pxl_cen),    // cen cannot be 1'b1
+    .addr(objdma_addr), .start(obj_copy), .we(objdma_we));
+
+// Display buffer the obj engine scans. SIMFILE lives HERE (not u_obj) so scene
+// replay - which never strobes obj_copy - still preloads the engine-visible RAM.
+jtframe_dual_ram16 #(.AW(10), .ENDIAN(1), .SIMFILE(SF_ORAM)) u_objbuf(
+    .clk0(clk), .addr0(objdma_addr), .data0(oram_dmaq),
+    .we0({2{objdma_we & pxl_cen}}), .q0(),
     .clk1(clk), .addr1(oram_vaddr), .data1(16'd0), .we1(2'b0), .q1(oram_vq));
 
 // ---- tilegen0 pf control registers (scroll) ----
