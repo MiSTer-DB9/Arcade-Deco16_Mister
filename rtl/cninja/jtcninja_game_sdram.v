@@ -39,9 +39,9 @@ wire signed [13:0] pcm1;
 wire signed [13:0] pcm2;
 wire mute;
 // Additional ports
+wire [15:0] main_dout;
 wire [15:0] snd_addr;
 wire [7:0] snd_data;
-wire [15:0] main_dout;
 
 // BRAM buses
 
@@ -167,9 +167,9 @@ jtcninja_game u_game(
     .dip_test       ( dip_test      ),
     .dip_fxlevel    ( dip_fxlevel   ),
     // Ports declared in mem.yaml
+    .main_dout   ( main_dout ),
     .snd_addr   ( snd_addr ),
     .snd_data   ( snd_data ),
-    .main_dout   ( main_dout ),
     // Memory interface - SDRAM
     .objrom_addr ( objrom_addr ),
     .objrom_cs   ( objrom_cs   ),

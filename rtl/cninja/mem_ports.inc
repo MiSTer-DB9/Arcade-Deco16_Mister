@@ -44,9 +44,9 @@
     input           ioctl_ram,
     input           ioctl_cart,
     // Explicit ports
+    output   [15:0] main_dout,
     output   [15:0] snd_addr,
     input   [7:0] snd_data,
-    output   [15:0] main_dout,
     // Buses to BRAM
 
     
