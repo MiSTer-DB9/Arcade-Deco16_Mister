@@ -51,8 +51,6 @@ localparam CONF_STR = {
 	"-;",
 	"O[14:13],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
-	"O[6],Debug pattern,Off,On;",
-	"O[7],SDRAM dump (BA3),Off,On;",
 	"-;",
 	"DIP;",
 	"-;",
@@ -62,8 +60,8 @@ localparam CONF_STR = {
 	"O[127:126],UserIO Joystick,Off,Saturn,DB9MD,DB15;",
 	"O[125],UserIO Players, 1 Player,2 Players;",
 	// [MiSTer-DB9-Pro END]
-	"J1,Attack,Jump,Start,Coin,Pause;",
-	"jn,A,B,Start,Select,R;",
+	"J1,Attack,Jump,Special,Start,Coin,Pause;",
+	"jn,A,B,X,Start,Select,R;",
 	"V,v",`BUILD_DATE
 };
 
@@ -252,20 +250,24 @@ assign ioctl_wait = prog_we;
 
 //////////////////////////////   INPUTS   ////////////////////////////////////
 // jtframe cabinet inputs are ACTIVE-LOW (idle=1). MiSTer joystick bits are
-// active-high; invert. jtframe joystick: [5:4]={B2,B1}, [3:0] dir nibble with
+// active-high; invert. The jtframe MRA <buttons> uses a 3-button family layout
+// (so Caveman Ninja & Crude Buster share bit positions): bit4=Attack bit5=Jump
+// bit6=Special(B3) bit7=Start bit8=Coin bit9=Pause/credits. Caveman Ninja
+// reserves bit6 with a "-" placeholder, so START/COIN sit at bits 7/8 for BOTH.
+// jtframe joystick: [6:4]={B3,B2,B1}, [3:0] dir nibble with
 // JTFRAME_JOY_RLDU => {R,L,D,U} = {in[0],in[1],in[2],in[3]}.
-function [5:0] jtjoy(input [31:0] m);
-	jtjoy = ~{ m[5], m[4], m[0], m[1], m[2], m[3] };
+function [6:0] jtjoy(input [31:0] m);
+	jtjoy = ~{ m[6], m[5], m[4], m[0], m[1], m[2], m[3] };
 endfunction
 
-wire [5:0] joystick1 = jtjoy(joystick_0);
-wire [5:0] joystick2 = jtjoy(joystick_1);
-wire [5:0] joystick3 = jtjoy(joystick_2);
-wire [5:0] joystick4 = jtjoy(joystick_3);
+wire [6:0] joystick1 = jtjoy(joystick_0);
+wire [6:0] joystick2 = jtjoy(joystick_1);
+wire [6:0] joystick3 = jtjoy(joystick_2);
+wire [6:0] joystick4 = jtjoy(joystick_3);
 
-wire [3:0] cab_1p = ~{ joystick_3[6], joystick_2[6], joystick_1[6], joystick_0[6] };
-wire [3:0] coin   = ~{ joystick_3[7], joystick_2[7], joystick_1[7], joystick_0[7] };
-wire       game_pause = joystick_0[8] | joystick_1[8];
+wire [3:0] cab_1p = ~{ joystick_3[7], joystick_2[7], joystick_1[7], joystick_0[7] };
+wire [3:0] coin   = ~{ joystick_3[8], joystick_2[8], joystick_1[8], joystick_0[8] };
+wire       game_pause = joystick_0[9] | joystick_1[9];
 
 //////////////////////////////   GAME CORE   /////////////////////////////////
 wire [7:0] red, green, blue;
@@ -378,47 +380,12 @@ jtcninja_game_sdram u_game
 	.sample     ( sample   )
 );
 
-//////////////////////////////   SDRAM DUMP (debug)   /////////////////////////
-// OSD "SDRAM dump" (status[7]): paint BA3's raw bytes to the screen as grayscale
-// to verify the gfx ROM actually landed in SDRAM. The game keeps running so its
-// video timing/raster stays alive, but this engine steals the SDRAM read bus and
-// walks BA3 from address 0 (= char ROM). Structured graphics on screen => the ROM
-// is really in SDRAM (the bug is downstream); noise/flat => the download wrote
-// garbage and every clock/burst experiment was beside the point.
-wire dbg_sdram = status[7];
-
-reg  [8:0] dmp_h, dmp_v;
-reg        dmp_hsd;
-always @(posedge clk48) begin
-	dmp_hsd <= HS;
-	if (pxl_cen)       dmp_h <= LHBL ? dmp_h + 9'd1 : 9'd0;
-	if (HS & ~dmp_hsd) dmp_v <= LVBL ? dmp_v + 9'd1 : 9'd0;
-end
-
-// 128 words (256 bytes) per scanline, base 0 = start of BA3. Two pixels per word.
-wire [21:0] dmp_waddr = ({14'd0, dmp_v[7:0]} << 7) + {15'd0, dmp_h[7:1]};
-reg  [21:0] dmp_addr;
-reg         dmp_rd, dmp_pend;
-reg  [15:0] dmp_word;
-always @(posedge clk48) begin
-	if (pxl_cen && dmp_h[0]==1'b0) begin   // one read per word, on the even pixel
-		dmp_addr <= dmp_waddr;
-		dmp_rd   <= 1'b1;
-		dmp_pend <= 1'b1;
-	end
-	if (dmp_rd   && ba_ack[3]) dmp_rd   <= 1'b0;
-	if (dmp_pend && ba_rdy[3]) begin dmp_word <= data_read; dmp_pend <= 1'b0; end
-end
-wire [7:0]  dmp_byte = dmp_h[0] ? dmp_word[7:0] : dmp_word[15:8];
-wire [23:0] dmp_rgb  = {dmp_byte, dmp_byte, dmp_byte};
-
-// Debug mux on the board-facing SDRAM bus (game runs but its reads are dropped).
-assign ba0_addr = dbg_sdram ? 22'd0           : g_ba0_addr;
-assign ba1_addr = dbg_sdram ? 22'd0           : g_ba1_addr;
-assign ba2_addr = dbg_sdram ? 22'd0           : g_ba2_addr;
-assign ba3_addr = dbg_sdram ? dmp_addr        : g_ba3_addr;
-assign ba_rd    = dbg_sdram ? {dmp_rd, 3'b000}: g_ba_rd;
-assign ba_wr    = dbg_sdram ? 4'd0            : g_ba_wr;
+assign ba0_addr = g_ba0_addr;
+assign ba1_addr = g_ba1_addr;
+assign ba2_addr = g_ba2_addr;
+assign ba3_addr = g_ba3_addr;
+assign ba_rd    = g_ba_rd;
+assign ba_wr    = g_ba_wr;
 
 //////////////////////////////   SDRAM   /////////////////////////////////////
 jtframe_board_sdram #(.SDRAMW(22), .MISTER(1)) u_sdram
@@ -477,17 +444,7 @@ jtframe_board_sdram #(.SDRAMW(22), .MISTER(1)) u_sdram
 );
 
 //////////////////////////////   VIDEO   /////////////////////////////////////
-// Debug test pattern (OSD "Debug pattern"): a position gradient independent of
-// the game + SDRAM, for isolating video-path vs game/SDRAM faults.
-reg  [8:0] tp_h, tp_v;
-reg        hs_d;
-always @(posedge clk48) begin
-	hs_d <= HS;
-	if (pxl_cen)      tp_h <= LHBL ? tp_h + 9'd1 : 9'd0;
-	if (HS & ~hs_d)   tp_v <= LVBL ? tp_v + 9'd1 : 9'd0;
-end
-wire [23:0] testpat  = { tp_h[7:0], tp_v[7:0], tp_h[7:0] ^ tp_v[7:0] };
-wire [23:0] game_rgb = dbg_sdram ? dmp_rgb : (status[6] ? testpat : { red, green, blue });
+wire [23:0] game_rgb = { red, green, blue };
 
 // jtframe LHBL/LVBL are active-low; arcade_video wants active-high HBlank/VBlank.
 arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video

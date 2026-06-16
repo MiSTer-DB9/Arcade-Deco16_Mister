@@ -28,7 +28,8 @@ localparam        SDRAMW     =`ifdef JTFRAME_SDRAM_LARGE 24 `else 23 `endif;
 parameter PCM_OFFSET = (`PCM_START -`JTFRAME_BA2_START)>>1;
 parameter PCM2_OFFSET = (`PCM2_START-`JTFRAME_BA2_START)>>1;
 parameter GFX2_OFFSET = (`GFX2_START-`JTFRAME_BA3_START)>>1;
-parameter GFX3_OFFSET = (`GFX3_START-`JTFRAME_BA3_START)>>1;
+parameter GFX3_OFFSET = (`GFX3_START    -`JTFRAME_BA1_START)>>1;
+parameter GFX3B_OFFSET = (`GFX3_BA2_START-`JTFRAME_BA2_START)>>1;
 
 // Audio channels 
 wire signed [15:0] opn;
@@ -46,12 +47,12 @@ wire [7:0] snd_data;
 
 // SDRAM buses
 
-wire [19:1] obj1_addr;
-wire [15:0] obj1_data;
-wire        obj1_cs, obj1_ok;
-wire [19:1] obj2_addr;
-wire [15:0] obj2_data;
-wire        obj2_cs, obj2_ok;
+wire [20:2] objrom_addr;
+wire [31:0] objrom_data;
+wire        objrom_cs, objrom_ok;
+wire [19:2] scr2_addr;
+wire [31:0] scr2_data;
+wire        scr2_cs, scr2_ok;
 wire [19:1] main_addr;
 wire [15:0] main_data;
 wire        main_cs, main_ok;
@@ -61,18 +62,15 @@ wire        oki1_cs, oki1_ok;
 wire [18:0] oki2_addr;
 wire [ 7:0] oki2_data;
 wire        oki2_cs, oki2_ok;
+wire [19:2] scr3_addr;
+wire [31:0] scr3_data;
+wire        scr3_cs, scr3_ok;
 wire [16:2] char_addr;
 wire [31:0] char_data;
 wire        char_cs, char_ok;
 wire [18:2] scr1_addr;
 wire [31:0] scr1_data;
 wire        scr1_cs, scr1_ok;
-wire [19:2] scr2_addr;
-wire [31:0] scr2_data;
-wire        scr2_cs, scr2_ok;
-wire [19:2] scr3_addr;
-wire [31:0] scr3_data;
-wire        scr3_cs, scr3_ok;
 wire        prom_we, header;
 wire [SDRAMW-2:0] raw_addr, post_addr;
 wire [SDRAMW-2:0] ioctl_prog_addr   = ioctl_addr[SDRAMW-2:0];
@@ -173,15 +171,15 @@ jtcninja_game u_game(
     .snd_addr   ( snd_addr ),
     .snd_data   ( snd_data ),
     // Memory interface - SDRAM
-    .obj1_addr ( obj1_addr ),
-    .obj1_cs   ( obj1_cs   ),
-    .obj1_ok   ( obj1_ok   ),
-    .obj1_data ( obj1_data ),
+    .objrom_addr ( objrom_addr ),
+    .objrom_cs   ( objrom_cs   ),
+    .objrom_ok   ( objrom_ok   ),
+    .objrom_data ( objrom_data ),
     
-    .obj2_addr ( obj2_addr ),
-    .obj2_cs   ( obj2_cs   ),
-    .obj2_ok   ( obj2_ok   ),
-    .obj2_data ( obj2_data ),
+    .scr2_addr ( scr2_addr ),
+    .scr2_cs   ( scr2_cs   ),
+    .scr2_ok   ( scr2_ok   ),
+    .scr2_data ( scr2_data ),
     
     .main_addr ( main_addr ),
     .main_cs   ( main_cs   ),
@@ -198,6 +196,11 @@ jtcninja_game u_game(
     .oki2_ok   ( oki2_ok   ),
     .oki2_data ( oki2_data ),
     
+    .scr3_addr ( scr3_addr ),
+    .scr3_cs   ( scr3_cs   ),
+    .scr3_ok   ( scr3_ok   ),
+    .scr3_data ( scr3_data ),
+    
     .char_addr ( char_addr ),
     .char_cs   ( char_cs   ),
     .char_ok   ( char_ok   ),
@@ -207,16 +210,6 @@ jtcninja_game u_game(
     .scr1_cs   ( scr1_cs   ),
     .scr1_ok   ( scr1_ok   ),
     .scr1_data ( scr1_data ),
-    
-    .scr2_addr ( scr2_addr ),
-    .scr2_cs   ( scr2_cs   ),
-    .scr2_ok   ( scr2_ok   ),
-    .scr2_data ( scr2_data ),
-    
-    .scr3_addr ( scr3_addr ),
-    .scr3_cs   ( scr3_cs   ),
-    .scr3_ok   ( scr3_ok   ),
-    .scr3_data ( scr3_data ),
     
     // Memory interface - BRAM
 
@@ -350,9 +343,9 @@ jtframe_headerbyte #(.AW(6)) u_pcbid(
 
 jtframe_rom_1slot #(
     .SDRAMW(SDRAMW-1),
-    // obj1
-    .SLOT0_AW(19),
-    .SLOT0_DW(16)
+    // objrom
+    .SLOT0_AW(20),
+    .SLOT0_DW(32)
 `ifdef JTFRAME_BA0_LEN
     ,.SLOT0_DOUBLE(1)
 `endif
@@ -360,10 +353,10 @@ jtframe_rom_1slot #(
     .rst         ( rst        ),
     .clk         ( clk        ),
     
-    .slot0_addr  ( obj1_addr  ),
-    .slot0_dout  ( obj1_data  ),
-    .slot0_cs    ( obj1_cs    ),
-    .slot0_ok    ( obj1_ok    ),
+    .slot0_addr  ( { objrom_addr, 1'b0 } ),
+    .slot0_dout  ( objrom_data  ),
+    .slot0_cs    ( objrom_cs    ),
+    .slot0_ok    ( objrom_ok    ),
     
     // SDRAM controller interface
     .sdram_ack   ( ba_ack[0]  ),
@@ -378,9 +371,10 @@ assign ba0_din  = 0;
 assign ba0_dsn  = 3;
 jtframe_rom_1slot #(
     .SDRAMW(SDRAMW-1),
-    // obj2
+    // scr2
+    .SLOT0_OFFSET(GFX3_OFFSET[SDRAMW-2:0]),
     .SLOT0_AW(19),
-    .SLOT0_DW(16)
+    .SLOT0_DW(32)
 `ifdef JTFRAME_BA1_LEN
     ,.SLOT0_DOUBLE(1)
 `endif
@@ -388,10 +382,10 @@ jtframe_rom_1slot #(
     .rst         ( rst        ),
     .clk         ( clk        ),
     
-    .slot0_addr  ( obj2_addr  ),
-    .slot0_dout  ( obj2_data  ),
-    .slot0_cs    ( obj2_cs    ),
-    .slot0_ok    ( obj2_ok    ),
+    .slot0_addr  ( { scr2_addr, 1'b0 } ),
+    .slot0_dout  ( scr2_data  ),
+    .slot0_cs    ( scr2_cs    ),
+    .slot0_ok    ( scr2_ok    ),
     
     // SDRAM controller interface
     .sdram_ack   ( ba_ack[1]  ),
@@ -404,7 +398,7 @@ jtframe_rom_1slot #(
 assign ba_wr[1] = 0;
 assign ba1_din  = 0;
 assign ba1_dsn  = 3;
-jtframe_rom_3slots #(
+jtframe_rom_4slots #(
     .SDRAMW(SDRAMW-1),
     // main
     .SLOT0_AW(19),
@@ -416,11 +410,16 @@ jtframe_rom_3slots #(
     // oki2
     .SLOT2_OFFSET(PCM2_OFFSET[SDRAMW-2:0]),
     .SLOT2_AW(19),
-    .SLOT2_DW( 8)
+    .SLOT2_DW( 8), 
+    // scr3
+    .SLOT3_OFFSET(GFX3B_OFFSET[SDRAMW-2:0]),
+    .SLOT3_AW(19),
+    .SLOT3_DW(32)
 `ifdef JTFRAME_BA2_LEN
     ,.SLOT0_DOUBLE(1)
     ,.SLOT1_DOUBLE(1)
     ,.SLOT2_DOUBLE(1)
+    ,.SLOT3_DOUBLE(1)
 `endif
 ) u_bank2(
     .rst         ( rst        ),
@@ -441,6 +440,11 @@ jtframe_rom_3slots #(
     .slot2_cs    ( oki2_cs    ),
     .slot2_ok    ( oki2_ok    ),
     
+    .slot3_addr  ( { scr3_addr, 1'b0 } ),
+    .slot3_dout  ( scr3_data  ),
+    .slot3_cs    ( scr3_cs    ),
+    .slot3_ok    ( scr3_ok    ),
+    
     // SDRAM controller interface
     .sdram_ack   ( ba_ack[2]  ),
     .sdram_rd    ( ba_rd[2]   ),
@@ -452,7 +456,7 @@ jtframe_rom_3slots #(
 assign ba_wr[2] = 0;
 assign ba2_din  = 0;
 assign ba2_dsn  = 3;
-jtframe_rom_4slots #(
+jtframe_rom_2slots #(
     .SDRAMW(SDRAMW-1),
     // char
     .SLOT0_AW(16),
@@ -460,20 +464,10 @@ jtframe_rom_4slots #(
     // scr1
     .SLOT1_OFFSET(GFX2_OFFSET[SDRAMW-2:0]),
     .SLOT1_AW(18),
-    .SLOT1_DW(32), 
-    // scr2
-    .SLOT2_OFFSET(GFX3_OFFSET[SDRAMW-2:0]),
-    .SLOT2_AW(19),
-    .SLOT2_DW(32), 
-    // scr3
-    .SLOT3_OFFSET(GFX3_OFFSET[SDRAMW-2:0]),
-    .SLOT3_AW(19),
-    .SLOT3_DW(32)
+    .SLOT1_DW(32)
 `ifdef JTFRAME_BA3_LEN
     ,.SLOT0_DOUBLE(1)
     ,.SLOT1_DOUBLE(1)
-    ,.SLOT2_DOUBLE(1)
-    ,.SLOT3_DOUBLE(1)
 `endif
 ) u_bank3(
     .rst         ( rst        ),
@@ -488,16 +482,6 @@ jtframe_rom_4slots #(
     .slot1_dout  ( scr1_data  ),
     .slot1_cs    ( scr1_cs    ),
     .slot1_ok    ( scr1_ok    ),
-    
-    .slot2_addr  ( { scr2_addr, 1'b0 } ),
-    .slot2_dout  ( scr2_data  ),
-    .slot2_cs    ( scr2_cs    ),
-    .slot2_ok    ( scr2_ok    ),
-    
-    .slot3_addr  ( { scr3_addr, 1'b0 } ),
-    .slot3_dout  ( scr3_data  ),
-    .slot3_cs    ( scr3_cs    ),
-    .slot3_ok    ( scr3_ok    ),
     
     // SDRAM controller interface
     .sdram_ack   ( ba_ack[3]  ),
