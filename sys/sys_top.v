@@ -1404,13 +1404,16 @@ scanlines #(0) VGA_scanlines
 // below), so HDMI is completely unaffected. Driven by emu's VGA_HSIZE OSD value.
 wire [2:0] vga_hsize;
 wire signed [3:0] vga_hsize_s = -$signed({1'b0, vga_hsize});
-// Read-side clock enable: clk_vid / (16 + hsize), reset on HSync rising edge
+// Read-side clock enable: clk_vid / (base + hsize), reset on HSync rising edge
 // for a deterministic per-line phase (uniform stretch, no shimmering).
+// base = clk_vid / pixel clock = 48 MHz / 6 MHz = 8 (JTFRAME_PXLCLK=6), so the
+// divider max is (base-1) + hsize = 7 + hsize. Do NOT use 15 here: that assumes
+// a 16x video clock and would make +1 nearly double the image (17/8 ~= 2.1x).
 reg vga_hs_sl_d;
 always @(posedge clk_vid) vga_hs_sl_d <= vga_hs_sl;
 wire vga_hs_rise = vga_hs_sl & ~vga_hs_sl_d;
 reg  [4:0] vga_ce_div;
-wire [4:0] vga_ce_max = 5'd15 + {2'd0, vga_hsize};
+wire [4:0] vga_ce_max = 5'd7 + {2'd0, vga_hsize};
 always @(posedge clk_vid) begin
 	if      (vga_hs_rise)               vga_ce_div <= 5'd0;
 	else if (vga_ce_div == vga_ce_max)  vga_ce_div <= 5'd0;
