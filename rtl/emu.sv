@@ -47,8 +47,13 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 localparam CONF_STR = {
 	"Arcade-Deco16;;",
 	"-;",
-	"O[14:13],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
-	"O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"P1,Video Settings;",
+	"P1O[14:13],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"P1O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"P1-;",
+	"P1O[34:32],Analog H-Size,0,1,2,3,4,5,6,7;",
+	"P1O[38:35],Analog Video H-Pos,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"P1O[42:39],Analog Video V-Pos,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"-;",
 	"DIP;",
 	"-;",
@@ -361,6 +366,31 @@ jtframe_board_sdram #(.SDRAMW(22), .MISTER(1)) u_sdram
 //////////////////////////////   VIDEO   /////////////////////////////////////
 wire [23:0] game_rgb = { red, green, blue };
 
+// ---- analog video adjustments (OSD) -------------------------------------
+// H-Size: passed to sys_top, which stretches pixels on the analog DAC path
+// (HDMI untouched) via the analog_hsize module.
+assign VGA_HSIZE = status[34:32];
+
+// H/V position: shift the HSync/VSync relative to the active window with
+// jtframe_resync (same proven pattern as Arcade-TaitoF2). Signed 4-bit
+// offsets (-8..+7); negate to make "positive = right/down" like the OSD list.
+wire signed [3:0] hoffset = status[38:35];
+wire signed [3:0] voffset = status[42:39];
+wire resync_hs, resync_vs;
+jtframe_resync u_resync
+(
+	.clk     ( clk48     ),
+	.pxl_cen ( pxl_cen   ),
+	.hs_in   ( HS        ),
+	.vs_in   ( VS        ),
+	.LVBL    ( LVBL      ),
+	.LHBL    ( LHBL      ),
+	.hoffset ( -hoffset  ),
+	.voffset ( -voffset  ),
+	.hs_out  ( resync_hs ),
+	.vs_out  ( resync_vs )
+);
+
 // jtframe LHBL/LVBL are active-low; arcade_video wants active-high HBlank/VBlank.
 arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 (
@@ -370,8 +400,8 @@ arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 	.RGB_in             ( game_rgb        ),
 	.HBlank             ( ~LHBL           ),
 	.VBlank             ( ~LVBL           ),
-	.HSync              ( HS              ),
-	.VSync              ( VS              ),
+	.HSync              ( resync_hs       ),
+	.VSync              ( resync_vs       ),
 
 	.CLK_VIDEO          ( CLK_VIDEO       ),
 	.CE_PIXEL           ( CE_PIXEL        ),
