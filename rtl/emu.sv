@@ -21,7 +21,7 @@ assign ADC_BUS  = 'Z;
 assign USER_OUT = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
-assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;
+// DDRAM is driven by u_rotate (screen_rotate) for the vertical framebuffer.
 
 assign VGA_F1       = 0;
 assign VGA_SCALER   = 0;
@@ -37,10 +37,13 @@ assign LED_POWER = 0;
 assign BUTTONS   = 0;
 
 //////////////////////////////  ASPECT RATIO  ////////////////////////////////
-// cninja is a horizontal 4:3 game (256x240).
+// 4:3 for the native landscape signal (all horizontal games, and vaportra in
+// TATE/Off mode where the monitor is physically rotated); 3:4 only when u_rotate
+// actually turns vaportra to portrait. no_rotate (VIDEO section) tracks exactly
+// that distinction.
 wire [1:0] ar = status[14:13];
-assign VIDEO_ARX = (!ar) ? 12'd4 : (ar - 1'd1);
-assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
+assign VIDEO_ARX = (!ar) ? (no_rotate ? 12'd4 : 12'd3) : (ar - 1'd1);
+assign VIDEO_ARY = (!ar) ? (no_rotate ? 12'd3 : 12'd4) : 12'd0;
 
 //////////////////////////////   CONF_STR   //////////////////////////////////
 `include "build_id.v"
@@ -49,6 +52,7 @@ localparam CONF_STR = {
 	"-;",
 	"P1,Video Settings;",
 	"P1O[14:13],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"P1O[2:1],Vertical rotation,Off,CW,CCW,Off;",
 	"P1O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"P1-;",
 	"P1O[38:35],Analog Video H-Pos,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
@@ -154,6 +158,12 @@ sync_rst u_rst96(.clk(clk96), .arst(core_reset), .rst(rst96));
 // MRA index 0 -> main ROM stream into the jtframe download path.
 // DIPs arrive on index 254 (4 bytes).
 wire        ioctl_rom = ioctl_download & (ioctl_index[15:0]==16'd0);
+
+// game_id = MRA header byte 0 (JTFRAME_HEADER=16, same byte the core decodes to
+// pick the address map). Latch it here so emu can rotate the vertical game.
+reg  [3:0]  game_id = 4'd0;
+always @(posedge clk48)
+	if (ioctl_rom && ioctl_wr && ioctl_addr[25:0]==26'd0) game_id <= ioctl_dout[3:0];
 
 reg  [7:0]  dsw[0:3];
 always @(posedge clk48) begin
@@ -412,6 +422,58 @@ arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 	.fx                 ( status[5:3]     ),
 	.forced_scandoubler ( forced_scandoubler ),
 	.gamma_bus          ( gamma_bus       )
+);
+
+// ---- rotation (vertical games) ------------------------------------------
+// One bitstream serves horizontal (cninja/cbuster/darkseal) and vertical
+// (vaportra, ROT270) games. Rotation only applies to the vertical game and is
+// user-selectable Off/CW/CCW: Off leaves the native landscape signal untouched
+// (TATE mode on a physically-rotated monitor); CW/CCW use the framebuffer path
+// (screen_rotate -> DDR3, read back rotated by sys_top). That path can't touch
+// analog direct_video, so it falls back to Off there like every MiSTer core.
+wire [1:0] rot_mode = status[2:1];       // 0/3=off, 1=CW, 2=CCW
+wire vertical   = (game_id == 4'd3);
+wire rot_cw     = (rot_mode == 2'd1);
+wire rot_ccw    = (rot_mode == 2'd2);
+wire no_rotate  = ~(vertical & (rot_cw | rot_ccw) & ~direct_video);
+wire rotate_ccw = rot_ccw;
+wire video_rotated;
+
+assign FB_FORCE_BLANK = 1'b0;
+
+screen_rotate u_rotate
+(
+	.CLK_VIDEO      ( CLK_VIDEO      ),
+	.CE_PIXEL       ( CE_PIXEL       ),
+	.VGA_R          ( VGA_R          ),
+	.VGA_G          ( VGA_G          ),
+	.VGA_B          ( VGA_B          ),
+	.VGA_HS         ( VGA_HS         ),
+	.VGA_VS         ( VGA_VS         ),
+	.VGA_DE         ( VGA_DE         ),
+
+	.rotate_ccw     ( rotate_ccw     ),
+	.no_rotate      ( no_rotate      ),
+	.flip           ( 1'b0           ),
+	.video_rotated  ( video_rotated  ),
+
+	.FB_EN          ( FB_EN          ),
+	.FB_FORMAT      ( FB_FORMAT      ),
+	.FB_WIDTH       ( FB_WIDTH       ),
+	.FB_HEIGHT      ( FB_HEIGHT      ),
+	.FB_BASE        ( FB_BASE        ),
+	.FB_STRIDE      ( FB_STRIDE      ),
+	.FB_VBL         ( FB_VBL         ),
+	.FB_LL          ( FB_LL          ),
+
+	.DDRAM_CLK      ( DDRAM_CLK      ),
+	.DDRAM_BUSY     ( DDRAM_BUSY     ),
+	.DDRAM_BURSTCNT ( DDRAM_BURSTCNT ),
+	.DDRAM_ADDR     ( DDRAM_ADDR     ),
+	.DDRAM_DIN      ( DDRAM_DIN      ),
+	.DDRAM_BE       ( DDRAM_BE       ),
+	.DDRAM_WE       ( DDRAM_WE       ),
+	.DDRAM_RD       ( DDRAM_RD       )
 );
 
 assign LED_USER = dwnld_busy;
