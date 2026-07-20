@@ -36,11 +36,6 @@ assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS   = 0;
 
-//////////////////////////////  ASPECT RATIO  ////////////////////////////////
-// 4:3 for the native landscape signal (all horizontal games, and vaportra in
-// TATE/Off mode where the monitor is physically rotated); 3:4 only when u_rotate
-// actually turns vaportra to portrait. no_rotate (VIDEO section) tracks exactly
-// that distinction.
 wire [1:0] ar = status[14:13];
 assign VIDEO_ARX = (!ar) ? (no_rotate ? 12'd4 : 12'd3) : (ar - 1'd1);
 assign VIDEO_ARY = (!ar) ? (no_rotate ? 12'd3 : 12'd4) : 12'd0;
@@ -425,12 +420,6 @@ arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 );
 
 // ---- rotation (vertical games) ------------------------------------------
-// One bitstream serves horizontal (cninja/cbuster/darkseal) and vertical
-// (vaportra, ROT270) games. Rotation only applies to the vertical game and is
-// user-selectable Off/CW/CCW: Off leaves the native landscape signal untouched
-// (TATE mode on a physically-rotated monitor); CW/CCW use the framebuffer path
-// (screen_rotate -> DDR3, read back rotated by sys_top). That path can't touch
-// analog direct_video, so it falls back to Off there like every MiSTer core.
 wire [1:0] rot_mode = status[2:1];       // 0/3=off, 1=CW, 2=CCW
 wire vertical   = (game_id == 4'd3);
 wire rot_cw     = (rot_mode == 2'd1);
