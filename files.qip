@@ -18,6 +18,7 @@ set_global_assignment -name VERILOG_FILE       rtl/cninja/jtcninja_colmix.v
 set_global_assignment -name VERILOG_FILE       rtl/cninja/jtcninja_deco104.v
 set_global_assignment -name VERILOG_FILE       rtl/cninja/jtcninja_game.v
 set_global_assignment -name VERILOG_FILE       rtl/cninja/jtcninja_main.v
+set_global_assignment -name VERILOG_FILE       rtl/cninja/jtcninja_mxc06.v
 set_global_assignment -name VERILOG_FILE       rtl/cninja/jtcninja_obj.v
 set_global_assignment -name VERILOG_FILE       rtl/cninja/jtcninja_snd.v
 set_global_assignment -name VERILOG_FILE       rtl/cninja/jtcninja_video.v
