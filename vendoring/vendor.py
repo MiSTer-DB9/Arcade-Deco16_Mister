@@ -47,7 +47,7 @@ MODULE_ROOTS = {
 GEN_RE = re.compile(r"(_game_sdram\.v|^mem_ports\.inc$|^fir_.*\.hex$)")
 # rtl module dirs that are hand-maintained (never vendored).
 HAND_DIRS = {"pll"}
-HAND_FILES = {"emu.sv", "analog_hsize.sv", "pll.v", "pll.qip"}
+HAND_FILES = {"emu.sv", "analog_hsize.sv", "crt_adjust.sv", "pll.v", "pll.qip"}
 
 QIP_RE = re.compile(r"set_global_assignment\s+-name\s+[A-Z_]*FILE\s+(.+?)\s*$")
 
