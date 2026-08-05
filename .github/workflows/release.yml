@@ -103,6 +103,7 @@ jobs:
         MAIN_BRANCH: main
         UPSTREAM_REPO: https://github.com/MiSTer-devel/Arcade-Deco16_Mister.git
         UPSTREAM_BRANCH: main
+        UPSTREAM_RELEASES_DIR: releases
         BUILD_SHA: ${{ steps.meta.outputs.build_sha }}
 
   build:
