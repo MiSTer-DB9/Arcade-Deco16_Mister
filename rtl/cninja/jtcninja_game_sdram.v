@@ -40,26 +40,26 @@ wire signed [13:0] pcm1;
 wire signed [13:0] pcm2;
 wire mute;
 // Additional ports
-wire [10:1] objcpu_addr;
-wire [10:1] oram_addr;
-wire [1:0] dma_we;
-wire [12:0] sndram_addr;
-wire [7:0] sndram_din;
-wire [12:1] palrw_addr;
-wire [15:0] palrw_dout;
 wire [10:1] dma_addr;
+wire [15:0] work_dout;
+wire [10:1] objcpu_addr;
+wire [15:0] obj_dout;
+wire [1:0] dma_we;
+wire [15:0] oram2dma_data;
 wire [7:0] sndram_dout;
 wire  sndram_we;
-wire [15:0] obj_dout;
-wire [15:0] work_dout;
-wire [1:0] work_we;
-wire [15:0] pal_dout;
-wire [1:0] objcpu_we;
-wire [15:0] oram_dout;
-wire [15:0] oram2dma_data;
-wire [15:0] main_dout;
 wire [12:1] pal_addr;
+wire [10:1] oram_addr;
+wire [1:0] work_we;
+wire [7:0] sndram_din;
+wire [15:0] oram_dout;
+wire [12:0] sndram_addr;
+wire [15:0] main_dout;
+wire [15:0] pal_dout;
+wire [12:1] palrw_addr;
+wire [15:0] palrw_dout;
 wire [15:0] objram_dout;
+wire [1:0] objcpu_we;
 
 // BRAM buses
 
@@ -200,26 +200,26 @@ jtcninja_game u_game(
     .dip_test       ( dip_test      ),
     .dip_fxlevel    ( dip_fxlevel   ),
     // Ports declared in mem.yaml
-    .objcpu_addr   ( objcpu_addr ),
-    .oram_addr   ( oram_addr ),
-    .dma_we   ( dma_we ),
-    .sndram_addr   ( sndram_addr ),
-    .sndram_din   ( sndram_din ),
-    .palrw_addr   ( palrw_addr ),
-    .palrw_dout   ( palrw_dout ),
     .dma_addr   ( dma_addr ),
+    .work_dout   ( work_dout ),
+    .objcpu_addr   ( objcpu_addr ),
+    .obj_dout   ( obj_dout ),
+    .dma_we   ( dma_we ),
+    .oram2dma_data   ( oram2dma_data ),
     .sndram_dout   ( sndram_dout ),
     .sndram_we   ( sndram_we ),
-    .obj_dout   ( obj_dout ),
-    .work_dout   ( work_dout ),
-    .work_we   ( work_we ),
-    .pal_dout   ( pal_dout ),
-    .objcpu_we   ( objcpu_we ),
-    .oram_dout   ( oram_dout ),
-    .oram2dma_data   ( oram2dma_data ),
-    .main_dout   ( main_dout ),
     .pal_addr   ( pal_addr ),
+    .oram_addr   ( oram_addr ),
+    .work_we   ( work_we ),
+    .sndram_din   ( sndram_din ),
+    .oram_dout   ( oram_dout ),
+    .sndram_addr   ( sndram_addr ),
+    .main_dout   ( main_dout ),
+    .pal_dout   ( pal_dout ),
+    .palrw_addr   ( palrw_addr ),
+    .palrw_dout   ( palrw_dout ),
     .objram_dout   ( objram_dout ),
+    .objcpu_we   ( objcpu_we ),
     // Memory interface - SDRAM
     .objrom_addr ( objrom_addr ),
     .objrom_cs   ( objrom_cs   ),
@@ -776,9 +776,9 @@ jtframe_rcmix #(
     .p3     ( 30'h00), // 0 Hz, 0 Hz 
     .p4     ( 30'h00), // 0 Hz, 0 Hz 
     .p5     ( 30'h0), 
-    .g0     ( 8'h28 ), // 0.31  opn
-    .g1     ( 8'h33 ), // 0.40  psg
-    .g2     ( 8'h21 ), // 0.26  opm
+    .g0     ( 8'h19 ), // 0.20  opn
+    .g1     ( 8'h20 ), // 0.25  psg
+    .g2     ( 8'h14 ), // 0.16  opm
     .g3     ( 8'h80 ), // 1.00  pcm1
     .g4     ( 8'h75 ), // 0.91  pcm2
     .g5     ( 8'h00 ), // 0.00 
